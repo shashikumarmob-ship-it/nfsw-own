@@ -3,12 +3,17 @@
 An intelligent, unrestricted Telegram AI Chat Bot powered by the free cloud AI at **Pollinations.ai**.
 
 ## ✨ Features
-* 💬 **Interactive Chat Mode:** Direct back-and-forth AI conversation with context memory.
-* 👤 **User Profile:** Real-time stats showing User ID, Username, total messages sent, and joined date.
+* 🧠 **Human-Like Dual Memory System:**
+  * **Short-Term Context Memory:** 16-turn rolling conversation thread so the AI remembers continuous chat threads like a real human.
+  * **Long-Term User Fact Extraction:** Automatically notes name, interests, location, and relationship preferences in `user.memories` and weaves them organically into replies.
+  * **Memory Management:** Dedicated `[ 🧠 View AI Memory ]` panel in Profile to view or clear stored facts.
+* 🎭 **4 Distinct AI Personas:** Switch between Romantic Partner, Bold & Uncensored, Smart Assistant, and Anime Waifu.
+* 💬 **Interactive Chat Mode:** Natural, emotionally present roleplay without robotic disclaimers.
+* 👤 **Interactive Profile Card:** Real-time stats with inline action buttons.
 * 🪙 **Credit Economy:** Credit balance deduction per message (1 credit per prompt).
 * 🎁 **Daily Bonus:** Free daily credits claimable every 24 hours.
 * 🧹 **Memory Reset:** Clear conversation memory at any time with 1 click.
-* ⚡ **Pollinations AI Integration:** 100% Free, no OpenAI API key required, unrestricted persona.
+* ⚡ **Pollinations AI Integration:** 100% Free, powered by `openai-fast` (`gpt-oss-20b`).
 * 🚀 **Render Ready:** Includes built-in lightweight HTTP health-check server to satisfy Render's port-binding requirement.
 
 ---
