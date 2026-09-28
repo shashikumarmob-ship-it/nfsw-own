@@ -1,0 +1,26 @@
+{
+  "name": "nfsw-own-tg-bot",
+  "version": "1.0.0",
+  "description": "Telegram AI Chat Bot powered by Pollinations AI with Credits & Profile System",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "telegram-bot",
+    "pollinations-ai",
+    "chatgpt",
+    "uncensored",
+    "render-deploy"
+  ],
+  "author": "",
+  "license": "MIT"
+}
