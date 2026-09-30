@@ -15,7 +15,24 @@ const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
 const INITIAL_CREDITS = parseInt(process.env.INITIAL_CREDITS || '30', 10);
 const DAILY_BONUS = parseInt(process.env.DAILY_BONUS || '20', 10);
-const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'mistral';
+
+// AI Provider Configuration (Pollinations AI + Hugging Face)
+const AI_PROVIDER = (process.env.AI_PROVIDER || 'auto').toLowerCase();
+const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai-fast';
+const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY || '';
+const HF_TOKEN = process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || '';
+const HF_MODEL = process.env.HF_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
+
+// Owner IDs with Unlimited Credits privilege (supports single ID or comma-separated list)
+const OWNER_IDS = (process.env.OWNER_ID || process.env.OWNER_CHAT_ID || '')
+  .split(',')
+  .map(id => id.trim())
+  .filter(Boolean);
+
+function isOwner(userId) {
+  if (!userId || OWNER_IDS.length === 0) return false;
+  return OWNER_IDS.includes(String(userId));
+}
 
 // Data storage path
 const DATA_DIR = path.join(__dirname, 'data');
@@ -203,13 +220,18 @@ function generateProfileCard(user) {
     year: 'numeric', month: 'short', day: 'numeric'
   });
 
+  const isUserOwner = isOwner(user.id);
+
   // Calculate Bonus Status
   const now = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
   let bonusStatus = '🟢 Ready to Claim (+20)';
   let canClaim = true;
 
-  if (user.lastClaimDate && (now - user.lastClaimDate < oneDayMs)) {
+  if (isUserOwner) {
+    bonusStatus = '👑 Unlimited Owner Access';
+    canClaim = false;
+  } else if (user.lastClaimDate && (now - user.lastClaimDate < oneDayMs)) {
     const remainingMs = oneDayMs - (now - user.lastClaimDate);
     const hours = Math.floor(remainingMs / (1000 * 60 * 60));
     const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -218,10 +240,14 @@ function generateProfileCard(user) {
   }
 
   // Account Rank
-  const rank = user.totalMessages > 50 ? '💎 VIP Member' : (user.totalMessages > 10 ? '⭐ Active Explorer' : '🌱 New Member');
+  const rank = isUserOwner
+    ? '👑 Bot Owner (Unlimited ♾️)'
+    : (user.totalMessages > 50 ? '💎 VIP Member' : (user.totalMessages > 10 ? '⭐ Active Explorer' : '🌱 New Member'));
+
   const currentPersona = PERSONAS[user.persona || 'romantic'] || PERSONAS.romantic;
   const memoryCount = (user.memories && user.memories.length) || 0;
   const historyTurns = Math.floor(((user.history && user.history.length) || 0) / 2);
+  const creditDisplay = isUserOwner ? '♾️ Unlimited (Owner VIP)' : `${user.credits} Credits`;
 
   const text = `┌──────────────────────────┐\n` +
     `│ 👤 *USER PROFILE & WALLET*       │\n` +
@@ -231,7 +257,7 @@ function generateProfileCard(user) {
     `🔗 *Username:* ${user.username}\n` +
     `👑 *Account Rank:* ${rank}\n` +
     `🎭 *Active Persona:* ${currentPersona.icon} *${currentPersona.name}*\n\n` +
-    `🪙 *Credit Balance:* *${user.credits} Credits*\n` +
+    `🪙 *Credit Balance:* *${creditDisplay}*\n` +
     `💬 *Messages Exchanged:* ${user.totalMessages}\n` +
     `🧠 *AI Memory:* ${memoryCount} facts remembered (${historyTurns} recent turns)\n` +
     `📅 *Member Since:* ${joinDate}\n` +
@@ -239,9 +265,13 @@ function generateProfileCard(user) {
     `🤖 *Chat Status:* ${user.state === 'chatting' ? '🟢 In Chat Mode' : '⚪ Idle'}\n\n` +
     `_Neeche diye gaye buttons se direct action perform karein:_`;
 
+  const bonusBtnText = isUserOwner
+    ? "👑 Owner VIP (Unlimited Credits)"
+    : (canClaim ? "🎁 Claim Daily Bonus (+20)" : "⏳ Bonus Already Claimed");
+
   const inlineKeyboard = [
     [
-      { text: canClaim ? "🎁 Claim Daily Bonus (+20)" : "⏳ Bonus Already Claimed", callback_data: "profile_bonus" }
+      { text: bonusBtnText, callback_data: "profile_bonus" }
     ],
     [
       { text: "🎭 Switch Character", callback_data: "open_personas" },
@@ -313,6 +343,11 @@ if (!TOKEN || TOKEN === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
 function startTelegramBot() {
   const bot = new TelegramBot(TOKEN, { polling: true });
   console.log('🤖 Telegram Bot polling started successfully!');
+  if (OWNER_IDS.length > 0) {
+    console.log(`👑 Owner ID(s) configured (${OWNER_IDS.length}):`, OWNER_IDS.join(', '));
+  } else {
+    console.log('ℹ️ No OWNER_ID configured in .env (Add OWNER_ID=<chat_id> for unlimited credits)');
+  }
 
   // Register Native Menu Commands in Telegram client
   bot.setMyCommands([
@@ -323,6 +358,7 @@ function startTelegramBot() {
     { command: 'credits', description: '🪙 Check Credits & Balance' },
     { command: 'bonus', description: '🎁 Claim Daily Free Credits' },
     { command: 'reset', description: '🧹 Clear Chat Memory' },
+    { command: 'id', description: '🆔 Get Your Telegram User ID & Status' },
     { command: 'help', description: 'ℹ️ How to Use' }
   ]).catch(() => {});
 
@@ -332,18 +368,24 @@ function startTelegramBot() {
     user.state = 'idle';
     saveDB();
 
+    const isUserOwner = isOwner(user.id);
     const currentPersona = PERSONAS[user.persona || 'romantic'] || PERSONAS.romantic;
+    const creditsNotice = isUserOwner
+      ? `👑 *Welcome Boss! Aapke paas ♾️ Unlimited Credits hain!*`
+      : `Aapko mile hain *${user.credits} starting credits*!`;
 
     const welcomeMsg = `👋 *Namaste, ${user.firstName}!* Welcome to **Aether AI Bot**.\n\n` +
       `⚡ *Powered by Pollinations AI (100% Free & Unrestricted)*\n` +
-      `🎭 *Active Character:* ${currentPersona.icon} *${currentPersona.name}*\n\n` +
+      `🎭 *Active Character:* ${currentPersona.icon} *${currentPersona.name}*\n` +
+      (isUserOwner ? `👑 *Access Level:* Bot Owner (♾️ Unlimited Credits Active)\n\n` : `\n`) +
       `Neeche diye gaye menu se option select karein:\n` +
       `• *💬 Start Chat:* AI ke saath direct conversation shuru karein\n` +
       `• *🎭 AI Personas:* Character change karein (Romantic, Bold, Anime, Assistant)\n` +
       `• *👤 Profile:* Apna account aur credit balance dekhein\n` +
       `• *🪙 Credits:* Credit balance check karein\n` +
-      `• *🎁 Daily Bonus:* Har 24 ghante me free credits claim karein\n\n` +
-      `Aapko mile hain *${user.credits} starting credits*! Shuru karne ke liye *💬 Start Chat* dabayein.`;
+      `• *🎁 Daily Bonus:* Har 24 ghante me free credits claim karein\n` +
+      `• *🆔 /id:* Apna Telegram ID aur status check karein\n\n` +
+      `${creditsNotice} Shuru karne ke liye *💬 Start Chat* dabayein.`;
 
     bot.sendMessage(msg.chat.id, welcomeMsg, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
   });
@@ -361,10 +403,13 @@ function startTelegramBot() {
       user.state = 'chatting';
       saveDB();
       const currentPersona = PERSONAS[user.persona || 'romantic'] || PERSONAS.romantic;
+      const creditLine = isOwner(user.id)
+        ? `🪙 *Balance:* ♾️ Unlimited (Owner VIP)`
+        : `🪙 *Balance:* ${user.credits} credits (1 credit/message)`;
       const startChatMsg = `💬 *Chat Mode Activated!*\n\n` +
         `🎭 *Active Character:* ${currentPersona.icon} *${currentPersona.name}*\n` +
         `Ab aap jo bhi message bhejenge, AI uska bina kisi restriction ke direct answer dega.\n\n` +
-        `🪙 *Balance:* ${user.credits} credits (1 credit/message)\n` +
+        `${creditLine}\n` +
         `👉 *Main Menu* par wapas jane ke liye neeche *🔙 Exit Chat* dabayein.`;
       return bot.sendMessage(chatId, startChatMsg, { parse_mode: 'Markdown', ...CHAT_MODE_KEYBOARD });
     }
@@ -391,7 +436,30 @@ function startTelegramBot() {
       });
     }
 
+    if (text === "/id" || text === "/myid") {
+      const ownerStatus = isOwner(user.id)
+        ? '👑 *Status:* Bot Owner (♾️ Unlimited Credits Active)'
+        : '👤 *Status:* Regular User';
+      return bot.sendMessage(
+        chatId,
+        `🆔 *Aapka Telegram User ID:* \`${user.id}\`\n${ownerStatus}\n\n_Is ID ko \`.env\` file me \`OWNER_ID=${user.id}\` set karke unlimited credits activate kar sakte hain._`,
+        { parse_mode: 'Markdown', ...(user.state === 'chatting' ? CHAT_MODE_KEYBOARD : MAIN_KEYBOARD) }
+      );
+    }
+
     if (text === "🪙 Credits") {
+      if (isOwner(user.id)) {
+        const creditsMsg = `🪙 *CREDIT WALLET (OWNER)*\n\n` +
+          `👑 *Account Status:* 👑 *Bot Owner / Admin*\n` +
+          `💰 *Aapka Balance:* *♾️ Unlimited Credits*\n\n` +
+          `✨ *Owner Privileges:*\n` +
+          `• Messages bhejne par koi credit deduct nahi hoga.\n` +
+          `• Koi daily limit ya cooldown nahi hai.\n` +
+          `• 100% Unrestricted chat access.\n\n` +
+          `👉 Shuru karne ke liye *💬 Start Chat* dabayein!`;
+        return bot.sendMessage(chatId, creditsMsg, { parse_mode: 'Markdown', ...(user.state === 'chatting' ? CHAT_MODE_KEYBOARD : MAIN_KEYBOARD) });
+      }
+
       const creditsMsg = `🪙 *CREDIT WALLET*\n\n` +
         `💰 *Aapka Balance:* *${user.credits} Credits*\n\n` +
         `ℹ️ *Credits Kaise Use Hote Hain?*\n` +
@@ -402,6 +470,14 @@ function startTelegramBot() {
     }
 
     if (text === "🎁 Daily Bonus") {
+      if (isOwner(user.id)) {
+        return bot.sendMessage(
+          chatId,
+          `👑 *Boss, aap Bot Owner hain!*\n\nAapke paas already *♾️ Unlimited Credits* hain, aapko daily bonus ki zaroorat nahi hai. Enjoy chatting!`,
+          { parse_mode: 'Markdown', ...(user.state === 'chatting' ? CHAT_MODE_KEYBOARD : MAIN_KEYBOARD) }
+        );
+      }
+
       const now = Date.now();
       const oneDayMs = 24 * 60 * 60 * 1000;
 
@@ -449,7 +525,8 @@ function startTelegramBot() {
 
     // If User is in Chat Mode -> Forward to Pollinations AI
     if (user.state === 'chatting') {
-      if (user.credits <= 0) {
+      const isUserOwner = isOwner(user.id);
+      if (!isUserOwner && user.credits <= 0) {
         return bot.sendMessage(
           chatId,
           `⚠️ *Aapke credits khatam ho gaye hain!*\n\n` +
@@ -462,8 +539,10 @@ function startTelegramBot() {
       // Send typing indicator
       bot.sendChatAction(chatId, 'typing');
 
-      // Deduct credit
-      user.credits -= 1;
+      // Deduct credit only if not owner
+      if (!isUserOwner) {
+        user.credits -= 1;
+      }
       user.totalMessages += 1;
 
       // Extract personal facts / memories from message
@@ -475,7 +554,7 @@ function startTelegramBot() {
       saveDB();
 
       try {
-        const aiResponse = await callPollinationsAI(user, user.history, user.persona || 'romantic');
+        const aiResponse = await generateAIResponse(user, user.history, user.persona || 'romantic');
         user.history.push({ role: 'assistant', content: aiResponse });
         if (user.history.length > 16) user.history = user.history.slice(-16);
         saveDB();
@@ -489,14 +568,16 @@ function startTelegramBot() {
           bot.sendMessage(chatId, aiResponse, CHAT_MODE_KEYBOARD);
         });
       } catch (err) {
-        console.error('Pollinations API error:', err);
-        // Refund credit on error
-        user.credits += 1;
+        console.error('AI API error:', err.message || err);
+        // Refund credit on error only if deducted
+        if (!isUserOwner) {
+          user.credits += 1;
+        }
         user.totalMessages -= 1;
         saveDB();
         bot.sendMessage(
           chatId,
-          `⚠️ *AI response generate karne me problem aayi.*\nCredit refund kar diya gaya hai. Please thodi der me dobara try karein.`,
+          `⚠️ *AI response generate karne me problem aayi.*\n${!isUserOwner ? 'Credit refund kar diya gaya hai. ' : ''}Please thodi der me dobara try karein.\n\n_Detail: ${err.message || 'Service unavailable'}_`,
           { parse_mode: 'Markdown', ...CHAT_MODE_KEYBOARD }
         );
       }
@@ -518,6 +599,14 @@ function startTelegramBot() {
     const messageId = query.message.message_id;
 
     if (data === 'profile_bonus') {
+      if (isOwner(user.id)) {
+        await bot.answerCallbackQuery(query.id, {
+          text: '👑 Aap Bot Owner hain! Aapke paas already ♾️ Unlimited Credits hain.',
+          show_alert: true
+        });
+        return;
+      }
+
       const now = Date.now();
       const oneDayMs = 24 * 60 * 60 * 1000;
       if (user.lastClaimDate && (now - user.lastClaimDate < oneDayMs)) {
@@ -573,8 +662,11 @@ function startTelegramBot() {
       user.state = 'chatting';
       saveDB();
       const currentPersona = PERSONAS[user.persona || 'romantic'] || PERSONAS.romantic;
+      const creditLine = isOwner(user.id)
+        ? `🪙 *Balance:* ♾️ Unlimited (Owner VIP)`
+        : `🪙 *Balance:* ${user.credits} credits`;
       await bot.answerCallbackQuery(query.id, { text: '💬 Chat mode activated!' });
-      bot.sendMessage(chatId, `💬 *Chat Mode Activated!*\n\n🎭 *Active Character:* ${currentPersona.icon} *${currentPersona.name}*\nAb aap jo bhi message bhejenge, AI uska bina kisi restriction ke direct answer dega.\n\n🪙 *Balance:* ${user.credits} credits\n👉 Exit karne ke liye *🔙 Exit Chat* dabayein.`, {
+      bot.sendMessage(chatId, `💬 *Chat Mode Activated!*\n\n🎭 *Active Character:* ${currentPersona.icon} *${currentPersona.name}*\nAb aap jo bhi message bhejenge, AI uska bina kisi restriction ke direct answer dega.\n\n${creditLine}\n👉 Exit karne ke liye *🔙 Exit Chat* dabayein.`, {
         parse_mode: 'Markdown',
         ...CHAT_MODE_KEYBOARD
       });
@@ -653,9 +745,128 @@ function startTelegramBot() {
 }
 
 // ==========================================================================
-// Pollinations AI API Integration (Human-Like Memory & Context Injection)
+// AI Inference Providers (Pollinations AI + Hugging Face)
 // ==========================================================================
-async function callPollinationsAI(user, history, personaKey = 'romantic') {
+
+/**
+ * 1. Pollinations AI Provider
+ * Free anonymous tier supports 'openai-fast'.
+ * Also supports POLLINATIONS_API_KEY from enter.pollinations.ai.
+ * Automatically recovers from HTTP 402/404 by falling back to 'openai-fast'.
+ */
+async function callPollinationsAI(messagesPayload, windowHistory, user, currentPersona, systemPrompt) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(POLLINATIONS_API_KEY ? { 'Authorization': `Bearer ${POLLINATIONS_API_KEY}` } : {})
+  };
+
+  // Models to attempt (Primary requested model, plus 'openai-fast' as guaranteed free fallback)
+  const modelsToTry = [POLLINATIONS_MODEL];
+  if (POLLINATIONS_MODEL !== 'openai-fast') {
+    modelsToTry.push('openai-fast');
+  }
+
+  // 1. Try POST request (OpenAI-compatible)
+  for (const model of modelsToTry) {
+    try {
+      const res = await fetch('https://text.pollinations.ai/', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          messages: messagesPayload,
+          model: model,
+          seed: Math.floor(Math.random() * 100000)
+        })
+      });
+
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim().length > 0) return text.trim();
+      } else {
+        console.warn(`Pollinations POST (${model}) returned HTTP ${res.status}`);
+      }
+    } catch (e) {
+      console.warn(`Pollinations POST (${model}) network error:`, e.message);
+    }
+  }
+
+  // 2. GET Fallback: Format full dialogue turns
+  let dialogueContext = '';
+  for (const turn of windowHistory) {
+    const roleLabel = turn.role === 'user' ? (user.firstName || 'User') : (currentPersona.name || 'Assistant');
+    dialogueContext += `${roleLabel}: ${turn.content}\n`;
+  }
+  dialogueContext += `${currentPersona.name}:`;
+
+  const encodedPrompt = encodeURIComponent(dialogueContext);
+  const encodedSys = encodeURIComponent(systemPrompt);
+
+  for (const model of modelsToTry) {
+    try {
+      let fallbackUrl = `https://text.pollinations.ai/${encodedPrompt}?system=${encodedSys}&model=${model}`;
+      if (POLLINATIONS_API_KEY) {
+        fallbackUrl += `&key=${encodeURIComponent(POLLINATIONS_API_KEY)}`;
+      }
+
+      const fallbackRes = await fetch(fallbackUrl, {
+        headers: POLLINATIONS_API_KEY ? { 'Authorization': `Bearer ${POLLINATIONS_API_KEY}` } : {}
+      });
+
+      if (fallbackRes.ok) {
+        const fallbackText = await fallbackRes.text();
+        if (fallbackText && fallbackText.trim().length > 0) return fallbackText.trim();
+      } else {
+        console.warn(`Pollinations GET (${model}) returned HTTP ${fallbackRes.status}`);
+      }
+    } catch (e) {
+      console.warn(`Pollinations GET (${model}) error:`, e.message);
+    }
+  }
+
+  throw new Error('Pollinations AI failed on all endpoints and models (including openai-fast)');
+}
+
+/**
+ * 2. Hugging Face Inference Providers (Serverless Router)
+ * Official endpoint: https://router.huggingface.co/v1/chat/completions
+ * Supports Llama 3.1, Qwen 2.5, DeepSeek R1, etc.
+ */
+async function callHuggingFaceAI(messagesPayload) {
+  if (!HF_TOKEN) {
+    throw new Error('Hugging Face Token (HF_TOKEN) is not configured in .env');
+  }
+
+  const res = await fetch('https://router.huggingface.co/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${HF_TOKEN}`
+    },
+    body: JSON.stringify({
+      model: HF_MODEL,
+      messages: messagesPayload,
+      max_tokens: 1024,
+      temperature: 0.7
+    })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Hugging Face HTTP ${res.status}: ${errText.slice(0, 120)}`);
+  }
+
+  const data = await res.json();
+  const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!reply || !reply.trim()) {
+    throw new Error('Hugging Face returned an empty response');
+  }
+  return reply.trim();
+}
+
+/**
+ * Orchestrator: Combines Memory Context + Provider Fallback
+ */
+async function generateAIResponse(user, history, personaKey = 'romantic') {
   const currentPersona = PERSONAS[personaKey] || PERSONAS.romantic;
 
   // Build remembered facts summary for continuous companion feel
@@ -682,42 +893,24 @@ async function callPollinationsAI(user, history, personaKey = 'romantic') {
     ...windowHistory
   ];
 
-  // 1. Try POST request to Pollinations OpenAI-compatible endpoint
-  try {
-    const res = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: messagesPayload,
-        model: POLLINATIONS_MODEL,
-        seed: Math.floor(Math.random() * 100000)
-      })
-    });
-
-    if (res.ok) {
-      const text = await res.text();
-      if (text && text.trim().length > 0) return text.trim();
+  // If user explicitly configured Hugging Face as primary
+  if (AI_PROVIDER === 'huggingface' && HF_TOKEN) {
+    try {
+      return await callHuggingFaceAI(messagesPayload);
+    } catch (hfErr) {
+      console.warn('Primary Hugging Face failed, trying Pollinations fallback:', hfErr.message);
+      return await callPollinationsAI(messagesPayload, windowHistory, user, currentPersona, systemPrompt);
     }
-  } catch (e) {
-    console.warn('POST to Pollinations failed, trying GET fallback:', e.message);
   }
 
-  // 2. GET Fallback: Format full dialogue turns into the prompt string so context isn't lost
-  let dialogueContext = '';
-  for (const turn of windowHistory) {
-    const roleLabel = turn.role === 'user' ? (user.firstName || 'User') : (currentPersona.name || 'Assistant');
-    dialogueContext += `${roleLabel}: ${turn.content}\n`;
+  // Default: Try Pollinations first (free, no token required), with auto fallback to Hugging Face
+  try {
+    return await callPollinationsAI(messagesPayload, windowHistory, user, currentPersona, systemPrompt);
+  } catch (polErr) {
+    if (HF_TOKEN) {
+      console.warn('Pollinations failed, trying Hugging Face fallback:', polErr.message);
+      return await callHuggingFaceAI(messagesPayload);
+    }
+    throw polErr;
   }
-  dialogueContext += `${currentPersona.name}:`;
-
-  const encodedPrompt = encodeURIComponent(dialogueContext);
-  const encodedSys = encodeURIComponent(systemPrompt);
-  const fallbackUrl = `https://text.pollinations.ai/${encodedPrompt}?system=${encodedSys}&model=${POLLINATIONS_MODEL}`;
-
-  const fallbackRes = await fetch(fallbackUrl);
-  if (!fallbackRes.ok) {
-    throw new Error(`Pollinations HTTP ${fallbackRes.status}`);
-  }
-  const fallbackText = await fallbackRes.text();
-  return fallbackText.trim();
 }

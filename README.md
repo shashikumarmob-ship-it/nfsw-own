@@ -13,7 +13,10 @@ An intelligent, unrestricted Telegram AI Chat Bot powered by the free cloud AI a
 * 🪙 **Credit Economy:** Credit balance deduction per message (1 credit per prompt).
 * 🎁 **Daily Bonus:** Free daily credits claimable every 24 hours.
 * 🧹 **Memory Reset:** Clear conversation memory at any time with 1 click.
-* ⚡ **Pollinations AI Integration:** 100% Free, powered by `openai-fast` (`gpt-oss-20b`).
+* ⚡ **Dual AI Engine:**
+  * **Pollinations AI:** 100% Free anonymous tier powered by `openai-fast` (`gpt-oss-20b`), with optional `POLLINATIONS_API_KEY`.
+  * **Hugging Face Inference Providers:** OpenAI-compatible serverless router (`https://router.huggingface.co/v1/chat/completions`) supporting `Llama-3.1-8B-Instruct`, `Qwen2.5-72B`, `DeepSeek-R1`, etc. via free `HF_TOKEN`.
+  * **Zero-Downtime Auto-Failover:** If one provider or model fails (e.g. 402/404/rate limits), the bot automatically fails over without breaking user chats.
 * 🚀 **Render Ready:** Includes built-in lightweight HTTP health-check server to satisfy Render's port-binding requirement.
 
 ---
@@ -30,10 +33,22 @@ An intelligent, unrestricted Telegram AI Chat Bot powered by the free cloud AI a
    ```bash
    cp .env.example .env
    ```
-   Open `.env` and paste your Bot Token from [@BotFather](https://t.me/BotFather):
+   Open `.env` and set your variables:
    ```env
    BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRstuVWXyz
+   OWNER_ID=1234567890
+
+   # AI Provider: 'auto', 'pollinations', or 'huggingface'
+   AI_PROVIDER=auto
+
+   # Free without API key:
+   POLLINATIONS_MODEL=openai-fast
+
+   # Optional Hugging Face Token (from https://huggingface.co/settings/tokens):
+   HF_TOKEN=
+   HF_MODEL=meta-llama/Llama-3.1-8B-Instruct
    ```
+   *(Send `/id` to the bot in Telegram to get your User ID)*
 
 3. **Start the bot:**
    ```bash
@@ -63,7 +78,9 @@ An intelligent, unrestricted Telegram AI Chat Bot powered by the free cloud AI a
 
 4. **Add Environment Variables (under 'Environment' tab on Render):**
    * Key: `BOT_TOKEN` | Value: *(Aapka BotFather token)*
-   * Key: `POLLINATIONS_MODEL` | Value: `mistral`
+   * Key: `OWNER_ID` | Value: *(Aapka Telegram User ID for ♾️ Unlimited Credits)*
+   * Key: `POLLINATIONS_MODEL` | Value: `openai-fast`
+   * Key: `HF_TOKEN` | Value: *(Optional: Hugging Face token for Llama-3.1/Qwen backup)*
    * Key: `INITIAL_CREDITS` | Value: `30`
    * Key: `DAILY_BONUS` | Value: `20`
 
